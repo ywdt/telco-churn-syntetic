@@ -4,6 +4,6 @@
 ['remote "mystorage"']
     url = s3://mlops/dvcstore
 ['remote "minio"']
-    url = s3://dvcstore
-    endpointurl = http://127.0.0.1:9990
+    url = s3://mlops
     profile = minio
+    endpointurl = http://127.0.0.1:9990
