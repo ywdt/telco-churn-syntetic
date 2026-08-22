@@ -23,7 +23,7 @@ stages:
           senior_decline_rate: 0.12
           churn_base_decline: 0.2
         generation:
-          samples: 20000
+          samples: 10000
           conv_samples: 7500
           start_date: '2023-01-01'
           end_date: '2024-12-31'
@@ -66,9 +66,9 @@ stages:
       size: 431
     - path: data/support_conversations.csv
       hash: md5
-      md5: 28e408f8ecee60bd88d221e1f579f764
-      size: 1830103
+      md5: 769e8ce8ccbe2555fb2f570a61f3855f
+      size: 1826986
     - path: data/telco_customers.csv
       hash: md5
-      md5: 61c6a439018016106cdcf30fb37c1397
-      size: 2976953
+      md5: 23dafc2a387172662a055ddbcfe968d0
+      size: 1488713
