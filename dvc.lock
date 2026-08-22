@@ -1,0 +1,74 @@
+schema: '2.0'
+stages:
+  generate:
+    cmd: python3 src/generate_dataset_ext.py
+    deps:
+    - path: src/generate_dataset_ext.py
+      hash: md5
+      md5: 687a8293e6d1cac129610c24f2dbd540
+      size: 22462
+    - path: src/hydra_patch.py
+      hash: md5
+      md5: 5020ad84c80327d50e8cbabae6704ff6
+      size: 3699
+    params:
+      config/config.yaml:
+        drift:
+          fiber_growth_rate: 0.25
+          dsl_decline_rate: 0.2
+          no_internet_decline: 0.05
+          echeck_decline_rate: 0.25
+          m2m_decline_rate: 0.25
+          streaming_boost_factor: 0.3
+          senior_decline_rate: 0.12
+          churn_base_decline: 0.2
+        generation:
+          samples: 50000
+          conv_samples: 7500
+          start_date: '2023-01-01'
+          end_date: '2024-12-31'
+          output_dir: data
+        knowledge_base:
+          enabled: true
+          documents:
+          - id: 1
+            title: How to reset your modem
+            content: 1. Unplug the power cord from the modem. 2. Wait 30 
+              seconds. 3. Plug it back in. 4. Wait for all lights to stabilize.
+          - id: 2
+            title: Understanding your bill
+            content: "Your monthly bill includes: base plan charge, equipment rental
+              (if applicable), taxes, and any one-time fees. Check 'My Account' for
+              detailed breakdown."
+        logging:
+          verbose: true
+          show_churn_stats: true
+        pricing:
+          base_charge: 20.0
+          phone_addon: 25.0
+          multiple_lines_addon: 18.0
+          dsl_addon: 50.0
+          fiber_base: 82.0
+          fiber_progress_bonus: 10.0
+          extra_service_per_item: 8.0
+          extra_service_progress_bonus: 3.0
+          one_year_discount: 0.94
+          two_year_discount: 0.88
+          two_year_progress_penalty: 0.03
+    outs:
+    - path: data/knowledge_base.csv
+      hash: md5
+      md5: 94da39d310de793f77e7f51293d67cec
+      size: 342
+    - path: data/knowledge_base.json
+      hash: md5
+      md5: ac9642b8ffce0eb80ed3b22d44e39b53
+      size: 431
+    - path: data/support_conversations.csv
+      hash: md5
+      md5: ab49ca70649a5bacefaf9c7d4d386130
+      size: 1826999
+    - path: data/telco_customers.csv
+      hash: md5
+      md5: 83f340f0c641360016c08a1ac739d35f
+      size: 7450606

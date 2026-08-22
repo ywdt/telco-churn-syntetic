@@ -79,65 +79,62 @@
 ```
  
 
-## 3. Generate a dataset
+## 3. Generate a dataset with Hydra & DVC
 
-
-## Standatd generation
-```sh
-python generate_dataset.py
-```
-## Custom generation
-```sh
-python generate_dataset.py --samples 100000 --output-dir my_data/
-```
-## Custom generation with date
-
-```sh
-python generate_dataset.py --samples 50000 --start-date 2022-01-01 --end-date 2024-12-31
-```
-
-## Enhanced Custom generation
-
-# Normal run (uses config.yaml)
+### Running with Default Configuration
 ```sh
 python src/generate_dataset_ext.py
 ```
-# Override number of clients
+
+### Runtime Overrides via Hydra
+You can override any parameter in `config/config.yaml` directly from the CLI:
 ```sh
-python src/generate_dataset_ext.py --override-samples 20000
+# Override samples and conversations
+python src/generate_dataset_ext.py generation.samples=20000 generation.conv_samples=3000
+
+# Override drift & pricing parameters
+python src/generate_dataset_ext.py drift.fiber_growth_rate=0.35 pricing.base_charge=25.0
+
+# Base generator with Hydra override
+python src/generate_dataset.py generation.samples=50000
 ```
-# Use different config
+
+### DVC Pipeline & Reproducibility
+The data generation stage and its parameter dependencies from `config/config.yaml` are tracked with DVC (`dvc.yaml`):
 
 ```sh
-python src/generate_dataset_ext.py --config config/my_experiment.yaml
-```
-# Full extended
+# Check parameter diffs
+dvc params diff
 
-```sh
-python src/generate_dataset_ext.py --samples 20000 --conv-samples 3000
+# Reproduce pipeline (re-runs when config.yaml or src/ files change)
+dvc repro
+
+# Run DVC experiment with parameter override
+dvc exp run -S config/config.yaml:generation.samples=20000
 ```
 
 ## 📊 What will you get?
 ```
 data/
-├── telco_customers.csv           # 50,000 clients with drift
-├── support_conversations.csv     # ~7,500 dialogs
-├── knowledge_base.csv            # 8 documents
-└── knowledge_base.json           # The same in json JSON
+├── telco_customers.csv           # Tabular customer churn data with drift
+├── support_conversations.csv     # Synthesized support dialogues
+├── knowledge_base.csv            # Knowledge base documents (CSV)
+└── knowledge_base.json           # Knowledge base documents (JSON)
 ```
-
-
 
 # Recommendations for using make
 
-- make help # see all available commands
-- make install # first time
-- make install-dev # if you want ruff, black, jupyter
-- make generate-ext # main generation
-- make explore # open Jupyter
-- make lint # check style
-- make format # fix style
-- make clean-data # clean only data
+- `make help` — see all available commands
+- `make install` — create venv and install dependencies
+- `make generate-ext` — generate extended dataset using Hydra
+- `make dvc-repro` — reproduce pipeline using DVC
+- `make dvc-params` — view parameter diffs tracked by DVC
+- `make dvc-exp` — run DVC experiment
+- `make explore` — open JupyterLab
+- `make lint` — check style with ruff and black
+- `make format` — auto-format code
+- `make clean-data` — remove generated datasets
+
 
 # 1. Data generation (as before)
 ```sh

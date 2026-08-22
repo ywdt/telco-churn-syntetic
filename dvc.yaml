@@ -1,0 +1,18 @@
+stages:
+  generate:
+    cmd: python3 src/generate_dataset_ext.py
+    deps:
+      - src/generate_dataset_ext.py
+      - src/hydra_patch.py
+    params:
+      - config/config.yaml:
+          - generation
+          - drift
+          - pricing
+          - knowledge_base
+          - logging
+    outs:
+      - data/telco_customers.csv
+      - data/support_conversations.csv
+      - data/knowledge_base.csv
+      - data/knowledge_base.json

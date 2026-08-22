@@ -3,44 +3,81 @@ import numpy as np
 import random
 from faker import Faker
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, Union
+
+# Compatibility patch for Python 3.14+ argparse in Hydra
+try:
+    import hydra_patch  # noqa: F401
+except ImportError:
+    from src import hydra_patch  # noqa: F401
+import hydra
+from omegaconf import DictConfig, OmegaConf
 
 fake = Faker()
 random.seed(42)
 np.random.seed(42)
 
+
+def _get_config_dict(config: Union[DictConfig, Dict[str, Any], None]) -> Dict[str, Any]:
+    if config is None:
+        return {}
+    if isinstance(config, DictConfig):
+        return OmegaConf.to_container(config, resolve=True)  # type: ignore
+    return config
+
+
 def generate_telco_dataset_with_drift(
     n_samples: int = 50000,
     start_date: str = "2023-01-01",
     end_date: str = "2024-12-31",
-    output_file: str = "synthetic_telco_churn_with_drift.csv"
+    output_file: str = "data/telco_churn_demo.csv",
+    drift_config: dict = None,
+    pricing_config: dict = None,
 ):
+    drift = drift_config or {}
+    pricing = pricing_config or {}
+
+    fiber_growth_rate      = drift.get("fiber_growth_rate", 0.25)
+    dsl_decline_rate       = drift.get("dsl_decline_rate", 0.20)
+    no_inet_decline        = drift.get("no_internet_decline", 0.05)
+    echeck_decline_rate    = drift.get("echeck_decline_rate", 0.25)
+    m2m_decline_rate       = drift.get("m2m_decline_rate", 0.25)
+    streaming_boost_factor = drift.get("streaming_boost_factor", 0.3)
+    senior_decline_rate    = drift.get("senior_decline_rate", 0.12)
+    churn_base_decline     = drift.get("churn_base_decline", 0.20)
+
+    base_charge                 = pricing.get("base_charge", 20.0)
+    phone_addon                 = pricing.get("phone_addon", 25.0)
+    multiple_lines_addon        = pricing.get("multiple_lines_addon", 18.0)
+    dsl_addon                   = pricing.get("dsl_addon", 50.0)
+    fiber_base                  = pricing.get("fiber_base", 82.0)
+    fiber_progress_bonus        = pricing.get("fiber_progress_bonus", 10.0)
+    extra_service_per_item      = pricing.get("extra_service_per_item", 8.0)
+    extra_service_progress_bonus= pricing.get("extra_service_progress_bonus", 3.0)
+    one_year_discount           = pricing.get("one_year_discount", 0.94)
+    two_year_discount           = pricing.get("two_year_discount", 0.88)
+    two_year_progress_penalty   = pricing.get("two_year_progress_penalty", 0.03)
+
     data = []
     start = datetime.strptime(start_date, "%Y-%m-%d")
     end = datetime.strptime(end_date, "%Y-%m-%d")
     total_days = (end - start).days
 
-    for i in range(n_samples):
+    for _ in range(n_samples):
         # Випадкова дата в діапазоні
         record_date = start + timedelta(days=random.randint(0, total_days))
         progress = (record_date - start).days / total_days  # 0.0 → 1.0 (2023 → 2024)
 
         # === ДРЕЙФ ПАРАМЕТРІВ ===
-        # 1. Зростання Fiber optic
-        fiber_prob = 0.40 + 0.25 * progress
-        dsl_prob = 0.40 - 0.20 * progress
-        no_inet_prob = 0.20 - 0.05 * progress
+        fiber_prob = 0.40 + fiber_growth_rate * progress
+        dsl_prob = 0.40 - dsl_decline_rate * progress
+        no_inet_prob = 0.20 - no_inet_decline * progress
 
-        # 2. Зменшення Electronic check
-        echeck_prob = max(0.15, 0.40 - 0.25 * progress)
-
-        # 3. Зростання довгострокових контрактів
-        m2m_prob = max(0.30, 0.55 - 0.25 * progress)
-
-        # 4. Зростання стримінгу
-        streaming_boost = 0.3 * progress
-
-        # 5. Зменшення SeniorCitizen серед нових клієнтів
-        senior_prob = max(0.08, 0.18 - 0.12 * progress)
+        echeck_prob = max(0.15, 0.40 - echeck_decline_rate * progress)
+        m2m_prob = max(0.30, 0.55 - m2m_decline_rate * progress)
+        streaming_boost = streaming_boost_factor * progress
+        senior_prob = max(0.08, 0.18 - senior_decline_rate * progress)
 
         # === Генерація клієнта ===
         gender = random.choice(["Male", "Female"])
@@ -88,24 +125,24 @@ def generate_telco_dataset_with_drift(
         )[0]
 
         # Ціна
-        base = 20.0
+        base = base_charge
         if phone_service == "Yes":
-            base += 25
+            base += phone_addon
             if multiple_lines == "Yes":
-                base += 18
+                base += multiple_lines_addon
         if internet_service == "DSL":
-            base += 50
+            base += dsl_addon
         elif internet_service == "Fiber optic":
-            base += 82 + 10*progress  # дорожче з часом
+            base += fiber_base + fiber_progress_bonus * progress
 
         extra_count = sum([online_security=="Yes", online_backup=="Yes", device_protection=="Yes",
                           tech_support=="Yes", streaming_tv=="Yes", streaming_movies=="Yes"])
-        base += extra_count * (8 + 3*progress)
+        base += extra_count * (extra_service_per_item + extra_service_progress_bonus * progress)
 
         if contract == "One year":
-            base *= 0.94
+            base *= one_year_discount
         elif contract == "Two year":
-            base *= 0.88 - 0.03*progress  # знижки трохи зменшуються
+            base *= two_year_discount - two_year_progress_penalty * progress
 
         monthly_charges = round(max(18.5, base + np.random.normal(0, 6)), 2)
         total_charges = round(monthly_charges * tenure * random.uniform(0.97, 1.03), 2)
@@ -116,7 +153,7 @@ def generate_telco_dataset_with_drift(
         if payment_method == "Electronic check": churn_base += 0.18
         if internet_service == "Fiber optic": churn_base += 0.08
         if tenure < 12: churn_base += 0.25 - tenure*0.02
-        churn_base -= 0.20 * progress  # головний ефект покращення
+        churn_base -= churn_base_decline * progress
 
         churn = "Yes" if random.random() < churn_base else "No"
 
@@ -138,22 +175,39 @@ def generate_telco_dataset_with_drift(
     df = pd.DataFrame(data, columns=columns)
     df = df.sort_values("RecordDate").reset_index(drop=True)
 
-    df.to_csv(output_file, index=False)
-    print(f"Готово! Згенеровано {n_samples:,} записів з дрейфом за 2023–2024")
-    print(f"Файл: {output_file}")
+    out_p = Path(output_file)
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_p, index=False)
+    print(f"Готово! Згенеровано {n_samples:,} записів з дрейфом за {start_date}–{end_date}")
+    print(f"Файл: {out_p}")
     print("\nРозподіл Churn по роках:")
     df['Year'] = pd.to_datetime(df['RecordDate']).dt.year
     print(df.groupby('Year')['Churn'].value_counts(normalize=True).unstack().round(3))
 
-# === ЗАПУСК ===
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Generate synthetic Telco Churn dataset with drift")
-    parser.add_argument("--samples", type=int, default=100000, help="Number of samples (default: 100000)")
-    parser.add_argument("--output", type=str, default="data/telco_churn_full.csv", help="Output CSV path")
-    args = parser.parse_args()
+
+# === ЗАПУСК ЧЕРЕЗ HYDRA ===
+@hydra.main(version_base=None, config_path="../config", config_name="config")
+def main(cfg: DictConfig) -> None:
+    output_dir_str = cfg.generation.get("output_dir", "data")
+    output_path = Path(hydra.utils.to_absolute_path(output_dir_str))
+    output_file = output_path / "telco_churn_demo.csv"
+
+    n_samples = cfg.generation.get("samples", 50000)
+    start_date = cfg.generation.get("start_date", "2023-01-01")
+    end_date = cfg.generation.get("end_date", "2024-12-31")
+
+    drift_cfg = _get_config_dict(cfg.get("drift", {}))
+    pricing_cfg = _get_config_dict(cfg.get("pricing", {}))
 
     generate_telco_dataset_with_drift(
-        n_samples=args.samples,
-        output_file=args.output
+        n_samples=n_samples,
+        start_date=start_date,
+        end_date=end_date,
+        output_file=str(output_file),
+        drift_config=drift_cfg,
+        pricing_config=pricing_cfg,
     )
+
+
+if __name__ == "__main__":
+    main()

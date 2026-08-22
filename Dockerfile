@@ -10,5 +10,5 @@ COPY src/ ./src/
 COPY config/ ./config/          
 COPY .gitignore .               
 
-# Якщо хочете запускати за замовчуванням саме розширений скрипт
-CMD ["python", "src/generate_dataset_ext.py", "--samples", "50000", "--conv-samples", "7500"]
+# Запуск розширеного скрипта через Hydra за замовчуванням
+CMD ["python", "src/generate_dataset_ext.py", "generation.samples=50000", "generation.conv_samples=7500"]

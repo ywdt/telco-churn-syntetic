@@ -5,7 +5,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./config:/app/config
-    command: python src/generate_dataset_ext.py --samples 50000 --conv-samples 7500
+    command: python src/generate_dataset_ext.py generation.samples=50000 generation.conv_samples=7500
 
   # ── Сервіс для Jupyter (новий)
   jupyter:

@@ -2,11 +2,18 @@ import pandas as pd
 import numpy as np
 import random
 import json
-import yaml
 from faker import Faker
 from datetime import datetime, timedelta
 from pathlib import Path
-import argparse
+from typing import Any, Dict, Union
+
+# Compatibility patch for Python 3.14+ argparse in Hydra
+try:
+    import hydra_patch  # noqa: F401
+except ImportError:
+    from src import hydra_patch  # noqa: F401
+import hydra
+from omegaconf import DictConfig, OmegaConf
 
 fake = Faker()
 random.seed(42)
@@ -14,7 +21,7 @@ np.random.seed(42)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# COMPLAINT_TEMPLATES та RESOLUTION_TEMPLATES (повністю відновлені)
+# COMPLAINT_TEMPLATES та RESOLUTION_TEMPLATES
 # ──────────────────────────────────────────────────────────────────────────────
 
 COMPLAINT_TEMPLATES = {
@@ -84,19 +91,19 @@ RESOLUTION_TEMPLATES = {
 }
 
 
-def load_config(config_path: str = "config/config.yaml") -> dict:
-    path = Path(config_path)
-    if not path.exists():
-        print(f"Файл конфігурації {config_path} не знайдено → використовуємо значення за замовчуванням")
+def _get_config_dict(config: Union[DictConfig, Dict[str, Any], None]) -> Dict[str, Any]:
+    if config is None:
         return {}
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    if isinstance(config, DictConfig):
+        return OmegaConf.to_container(config, resolve=True)  # type: ignore
+    return config
 
 
-def generate_tabular_data(config: dict = None) -> pd.DataFrame:
-    config = config or {}
-    gen = config.get("generation", {})
-    drift = config.get("drift", {})
+def generate_tabular_data(config: Union[DictConfig, Dict[str, Any], None] = None) -> pd.DataFrame:
+    cfg = _get_config_dict(config)
+    gen = cfg.get("generation", {})
+    drift = cfg.get("drift", {})
+    pricing = cfg.get("pricing", {})
 
     n_samples   = gen.get("samples", 50000)
     start_date  = gen.get("start_date", "2023-01-01")
@@ -111,6 +118,19 @@ def generate_tabular_data(config: dict = None) -> pd.DataFrame:
     streaming_boost_factor = drift.get("streaming_boost_factor", 0.3)
     senior_decline_rate    = drift.get("senior_decline_rate", 0.12)
     churn_base_decline     = drift.get("churn_base_decline", 0.20)
+
+    # Pricing параметри
+    base_charge                 = pricing.get("base_charge", 20.0)
+    phone_addon                 = pricing.get("phone_addon", 25.0)
+    multiple_lines_addon        = pricing.get("multiple_lines_addon", 18.0)
+    dsl_addon                   = pricing.get("dsl_addon", 50.0)
+    fiber_base                  = pricing.get("fiber_base", 82.0)
+    fiber_progress_bonus        = pricing.get("fiber_progress_bonus", 10.0)
+    extra_service_per_item      = pricing.get("extra_service_per_item", 8.0)
+    extra_service_progress_bonus= pricing.get("extra_service_progress_bonus", 3.0)
+    one_year_discount           = pricing.get("one_year_discount", 0.94)
+    two_year_discount           = pricing.get("two_year_discount", 0.88)
+    two_year_progress_penalty   = pricing.get("two_year_progress_penalty", 0.03)
 
     data = []
     start = datetime.strptime(start_date, "%Y-%m-%d")
@@ -172,24 +192,24 @@ def generate_tabular_data(config: dict = None) -> pd.DataFrame:
             weights=[echeck_prob, 0.25, 0.25 + 0.1*progress, 0.25 + 0.15*progress]
         )[0]
 
-        base = 20.0
+        base = base_charge
         if phone_service == "Yes":
-            base += 25
+            base += phone_addon
             if multiple_lines == "Yes":
-                base += 18
+                base += multiple_lines_addon
         if internet_service == "DSL":
-            base += 50
+            base += dsl_addon
         elif internet_service == "Fiber optic":
-            base += 82 + 10*progress
+            base += fiber_base + fiber_progress_bonus * progress
 
         extra_count = sum([online_security=="Yes", online_backup=="Yes", device_protection=="Yes",
                            tech_support=="Yes", streaming_tv=="Yes", streaming_movies=="Yes"])
-        base += extra_count * (8 + 3*progress)
+        base += extra_count * (extra_service_per_item + extra_service_progress_bonus * progress)
 
         if contract == "One year":
-            base *= 0.94
+            base *= one_year_discount
         elif contract == "Two year":
-            base *= 0.88 - 0.03*progress
+            base *= two_year_discount - two_year_progress_penalty * progress
 
         monthly_charges = round(max(18.5, base + np.random.normal(0, 6)), 2)
         total_charges = round(monthly_charges * tenure * random.uniform(0.97, 1.03), 2)
@@ -321,21 +341,33 @@ def generate_conversation(customer: dict) -> dict:
     }
 
 
-def generate_knowledge_base(output_dir: str | Path):
-    kb_data = [
-        {"id": 1, "title": "How to reset your modem", "content": "1. Unplug the power cord from the modem. 2. Wait 30 seconds. 3. Plug it back in. 4. Wait for all lights to stabilize."},
-        {"id": 2, "title": "Understanding your bill", "content": "Your monthly bill includes: base plan charge, equipment rental (if applicable), taxes, and any one-time fees. Check 'My Account' for detailed breakdown."},
-        {"id": 3, "title": "Upgrading to Fiber optic", "content": "Fiber offers speeds up to 1 Gbps. Availability depends on your address. Contact support or check online to see if eligible."},
-        {"id": 4, "title": "How to change payment method", "content": "Log in → My Account → Billing & Payments → Update Payment Method. We accept credit/debit cards, bank transfer, and electronic check."},
-        {"id": 5, "title": "Troubleshooting slow internet", "content": "1. Restart modem/router. 2. Connect via Ethernet to test. 3. Check for background downloads. 4. Contact us if issue persists."},
-        {"id": 6, "title": "Contract terms and cancellation", "content": "Month-to-month: cancel anytime. One/Two year: early termination fee may apply. 30-day notice required."},
-        {"id": 7, "title": "Adding streaming services", "content": "You can add HBO, Netflix bundle, etc. in My Services. Some plans include free streaming options."},
-        {"id": 8, "title": "Technical support hours", "content": "24/7 phone support. Chat available Mon–Fri 8 AM – 10 PM, weekends 9 AM – 8 PM."}
-    ]
+def generate_knowledge_base(output_dir: Union[str, Path], config: Union[DictConfig, Dict[str, Any], None] = None):
+    cfg = _get_config_dict(config)
+    kb_config = cfg.get("knowledge_base", {})
 
-    output_dir = Path(output_dir)
-    csv_path = output_dir / "knowledge_base.csv"
-    json_path = output_dir / "knowledge_base.json"
+    if not kb_config.get("enabled", True):
+        print("Knowledge base generation disabled in config.")
+        return
+
+    custom_docs = kb_config.get("documents", None)
+    if custom_docs:
+        kb_data = custom_docs
+    else:
+        kb_data = [
+            {"id": 1, "title": "How to reset your modem", "content": "1. Unplug the power cord from the modem. 2. Wait 30 seconds. 3. Plug it back in. 4. Wait for all lights to stabilize."},
+            {"id": 2, "title": "Understanding your bill", "content": "Your monthly bill includes: base plan charge, equipment rental (if applicable), taxes, and any one-time fees. Check 'My Account' for detailed breakdown."},
+            {"id": 3, "title": "Upgrading to Fiber optic", "content": "Fiber offers speeds up to 1 Gbps. Availability depends on your address. Contact support or check online to see if eligible."},
+            {"id": 4, "title": "How to change payment method", "content": "Log in → My Account → Billing & Payments → Update Payment Method. We accept credit/debit cards, bank transfer, and electronic check."},
+            {"id": 5, "title": "Troubleshooting slow internet", "content": "1. Restart modem/router. 2. Connect via Ethernet to test. 3. Check for background downloads. 4. Contact us if issue persists."},
+            {"id": 6, "title": "Contract terms and cancellation", "content": "Month-to-month: cancel anytime. One/Two year: early termination fee may apply. 30-day notice required."},
+            {"id": 7, "title": "Adding streaming services", "content": "You can add HBO, Netflix bundle, etc. in My Services. Some plans include free streaming options."},
+            {"id": 8, "title": "Technical support hours", "content": "24/7 phone support. Chat available Mon–Fri 8 AM – 10 PM, weekends 9 AM – 8 PM."}
+        ]
+
+    output_path = Path(output_dir)
+    output_path.mkdir(exist_ok=True, parents=True)
+    csv_path = output_path / "knowledge_base.csv"
+    json_path = output_path / "knowledge_base.json"
 
     pd.DataFrame(kb_data).to_csv(csv_path, index=False)
     with open(json_path, "w", encoding="utf-8") as f:
@@ -345,44 +377,39 @@ def generate_knowledge_base(output_dir: str | Path):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Головний запуск
+# Головний запуск через Hydra
 # ──────────────────────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Генерація розширеного Telco датасету: churn + support conversations + knowledge base")
-    parser.add_argument("--config", type=str, default="config/config.yaml",
-                        help="Шлях до config.yaml (опціонально)")
-    parser.add_argument("--samples", type=int, help="Кількість клієнтів (перевизначення)")
-    parser.add_argument("--conv-samples", type=int, help="Кількість розмов support (перевизначення)")
-    parser.add_argument("--output-dir", type=str, default="data",
-                        help="Директорія для збереження файлів")
-    args = parser.parse_args()
-
-    config = load_config(args.config)
-
-    # Пріоритет: CLI > config.yaml > дефолт
-    n_samples    = args.samples    or config.get("generation", {}).get("samples", 50000)
-    conv_samples = args.conv_samples or config.get("generation", {}).get("conv_samples", 7500)
-    output_dir   = args.output_dir or config.get("generation", {}).get("output_dir", "data")
-
-    output_path = Path(output_dir)
+@hydra.main(version_base=None, config_path="../config", config_name="config")
+def main(cfg: DictConfig) -> None:
+    output_dir_str = cfg.generation.get("output_dir", "data")
+    output_path = Path(hydra.utils.to_absolute_path(output_dir_str))
     output_path.mkdir(exist_ok=True, parents=True)
 
-    print(f"Генерація: {n_samples:,} клієнтів + {conv_samples:,} розмов → {output_path}")
+    n_samples = cfg.generation.get("samples", 50000)
+    conv_samples = cfg.generation.get("conv_samples", 7500)
+    verbose = cfg.logging.get("verbose", True)
+    show_churn_stats = cfg.logging.get("show_churn_stats", True)
+
+    if verbose:
+        print(f"Генерація: {n_samples:,} клієнтів + {conv_samples:,} розмов → {output_path}")
 
     # 1. Табличні дані
-    df_customers = generate_tabular_data(config)
+    df_customers = generate_tabular_data(cfg)
     customers_path = output_path / "telco_customers.csv"
     df_customers.to_csv(customers_path, index=False)
-    print(f"Збережено {len(df_customers):,} клієнтів → {customers_path}")
+    if verbose:
+        print(f"Збережено {len(df_customers):,} клієнтів → {customers_path}")
 
     # Статистика churn drift
-    df_customers['Year'] = pd.to_datetime(df_customers['RecordDate']).dt.year
-    print("\nChurn rate по роках:")
-    print(df_customers.groupby('Year')['Churn'].value_counts(normalize=True).unstack().round(3))
+    if show_churn_stats:
+        df_customers['Year'] = pd.to_datetime(df_customers['RecordDate']).dt.year
+        print("\nChurn rate по роках:")
+        print(df_customers.groupby('Year')['Churn'].value_counts(normalize=True).unstack().round(3))
 
     # 2. Support conversations
-    print("\nГенерація support conversations...")
+    if verbose:
+        print("\nГенерація support conversations...")
     conv_data = []
     sampled_customers = df_customers.sample(n=conv_samples, replace=True)
     for _, customer in sampled_customers.iterrows():
@@ -392,10 +419,17 @@ if __name__ == "__main__":
     df_conversations = pd.DataFrame(conv_data)
     conv_path = output_path / "support_conversations.csv"
     df_conversations.to_csv(conv_path, index=False)
-    print(f"Згенеровано та збережено {len(df_conversations):,} розмов → {conv_path}")
+    if verbose:
+        print(f"Згенеровано та збережено {len(df_conversations):,} розмов → {conv_path}")
 
     # 3. Knowledge base
-    print("\nГенерація knowledge base...")
-    generate_knowledge_base(output_path)
+    if verbose:
+        print("\nГенерація knowledge base...")
+    generate_knowledge_base(output_path, cfg)
 
-    print("\nГотово! Дані підготовлені для MLOps / LLMOps демо.")
+    if verbose:
+        print("\nГотово! Дані підготовлені для MLOps / LLMOps демо.")
+
+
+if __name__ == "__main__":
+    main()
